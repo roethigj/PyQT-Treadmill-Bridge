@@ -1,11 +1,12 @@
 from PySide6.QtBluetooth import (QBluetoothUuid,
+                                 QBluetoothAddress,
                                  QLowEnergyController,
                                  QLowEnergyDescriptor,
                                  QLowEnergyService,
                                  QBluetoothDeviceInfo,
                                  QBluetoothLocalDevice,
                                  QBluetoothDeviceDiscoveryAgent)
-from PySide6.QtCore import QByteArray, Signal, QDateTime, Slot, QThread
+from PySide6.QtCore import QByteArray, Signal, QDateTime, Slot, QThread, QLoggingCategory
 
 
 def find_local_devices():
@@ -185,7 +186,7 @@ class FtmsHandler(QThread):
 
 
 class BleCentral(QThread):
-    # QLoggingCategory.setFilterRules("qt.bluetooth* = true")
+    QLoggingCategory.setFilterRules("qt.bluetooth* = true")
     ftms_td_signal = Signal(bytearray)
     ftms_st_signal = Signal(bytearray)
     ftms_ts_signal = Signal(bytearray)
@@ -197,14 +198,7 @@ class BleCentral(QThread):
         self.remote_devices = []
         self.ftms_device = ""
         self.device_handler = FtmsHandler(parent=None, local_device=local_device)
-        self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(local_device)
-        self.device_discovery_agent.setLowEnergyDiscoveryTimeout(5000)
-        self.device_discovery_agent.deviceDiscovered.connect(self.add_device)
-        self.device_discovery_agent.finished.connect(self.scan_finished)
-        self.device_handler.ftms_td_signal.connect(self.forward_ftms_td)
-        self.device_handler.ftms_st_signal.connect(self.forward_ftms_st)
-        self.device_handler.ftms_ts_signal.connect(self.forward_ftms_ts)
-        self.device_handler.ftms_co_signal.connect(self.forward_ftms_co)
+        self.local_device = local_device
 
     @Slot()
     def forward_ftms_td(self, data):
@@ -224,12 +218,19 @@ class BleCentral(QThread):
 
     def run(self):
         self.device_handler.set_device(None)
-
+        self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(self.local_device)
+        self.device_discovery_agent.setLowEnergyDiscoveryTimeout(5000)
+        self.device_discovery_agent.deviceDiscovered.connect(self.add_device)
+        self.device_discovery_agent.finished.connect(self.scan_finished)
+        self.device_handler.ftms_td_signal.connect(self.forward_ftms_td)
+        self.device_handler.ftms_st_signal.connect(self.forward_ftms_st)
+        self.device_handler.ftms_ts_signal.connect(self.forward_ftms_ts)
+        self.device_handler.ftms_co_signal.connect(self.forward_ftms_co)
         self.device_discovery_agent.start(QBluetoothDeviceDiscoveryAgent.LowEnergyMethod)
 
     @Slot(QBluetoothDeviceInfo)
     def add_device(self, device):
-        if device.address == self.blacklist_address:
+        if QBluetoothAddress(device.address()) == QBluetoothAddress(self.blacklist_address):
             return
         self.remote_devices.append(device)
 
@@ -243,6 +244,7 @@ class BleCentral(QThread):
         if self.remote_devices:
             print(f"Found BT devices: {len(self.remote_devices)}")
             for device in self.remote_devices:
+                print(f"d {device.address()} b {self.blacklist_address}")
                 for services in device.serviceUuids():
                     if services == QBluetoothUuid(0x1826):
                         self.connect_to_service(device.address())

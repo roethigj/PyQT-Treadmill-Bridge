@@ -26,6 +26,7 @@ class WriteEmitter(QThread):
         print("end run")
 
     def emit_data(self, data):
+        print(data)
         self.control_point.emit(data)
 
     def stop(self):
