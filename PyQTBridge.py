@@ -149,7 +149,7 @@ class TreadmillGUI(QtWidgets.QWidget):
             print("reconnect ftms")
             self.thread[1].stop()
             time.sleep(2)
-            self.thread[1].start()
+            self.thread[1].run()
 
     def ftms_td(self, data):
         if 3 in self.thread:
