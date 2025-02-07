@@ -1,56 +1,130 @@
+import time
+
 from PySide6.QtBluetooth import (QBluetoothUuid,
                                  QBluetoothAddress,
                                  QLowEnergyController,
                                  QLowEnergyDescriptor,
                                  QLowEnergyService,
-                                 QBluetoothDeviceInfo,
-                                 QBluetoothLocalDevice,
-                                 QBluetoothDeviceDiscoveryAgent)
-from PySide6.QtCore import QByteArray, Signal, QDateTime, Slot, QThread, QLoggingCategory
+
+                                 QBluetoothDeviceDiscoveryAgent,
+                                 QLowEnergyConnectionParameters)
+from PySide6.QtCore import QByteArray, Signal, QThread, QLoggingCategory
 
 
-def find_local_devices():
-    test = QBluetoothLocalDevice.allDevices()
-    devices = []
-    for i in test:
-        devices.append(i.address())
-    return devices
-
-
-class FtmsHandler(QThread):
+class WriteEmitter(QThread):
     ftms_td_signal = Signal(bytearray)
     ftms_st_signal = Signal(bytearray)
     ftms_ts_signal = Signal(bytearray)
     ftms_co_signal = Signal(bool)
 
-    def __init__(self, parent=None, local_device=None):
-        super(FtmsHandler, self).__init__(parent)
+    def __init__(self, parent=None,
+                 runner=False):
+        super(WriteEmitter, self).__init__(parent)
+        self.runner = runner
+
+    def run(self):
+        while self.runner:
+            QThread.sleep(1)
+            # pass
+
+    def emit_ftms_td_signal(self, data):
+        self.ftms_td_signal.emit(data)
+
+    def emit_ftms_st_signal(self, data):
+        self.ftms_st_signal.emit(data)
+
+    def emit_ftms_ts_signal(self, data):
+        self.ftms_ts_signal.emit(data)
+
+    def emit_ftms_co_signal(self, data):
+        self.ftms_co_signal.emit(data)
+
+    def stop(self):
+        self.runner = False
+
+class BleCentral:
+    QLoggingCategory.setFilterRules("qt.bluetooth* = true")
+
+    def __init__(self, local_device=None, **kwargs):
+        super(BleCentral, self).__init__()
+        self.blacklist_address = kwargs.get('blacklist_address', None)
+        self.remote_devices = []
+        self.ftms_device = ""
+        self.local_device = local_device
+
         self.m_control = None
         self.m_service = None
         self.m_notificationDesc = QLowEnergyDescriptor()
         self.m_currentDevice = None
-        self.local_device = local_device
-
         self.m_foundFtmsService = False
-        self.m_measuring = False
+
         self.ftms_data_char = None
         self.ftms_status_char = None
         self.training_status_char = None
         self.control_point_char = None
 
-        self.m_start = QDateTime()
-        self.m_stop = QDateTime()
-
-        self.m_measurements = []
         self.m_addressType = QLowEnergyController.RemoteAddressType.RandomAddress
 
-    def controller_connected(self):
-        self.m_control.discoverServices()
+        self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(self.local_device)
 
-    def controller_disconnected(self):
-        print("LowEnergy controller disconnected")  # reconnect later?
-        # self.set_device(self.m_currentDevice)
-        self.ftms_co_signal.emit(False)
+        self.connection_parameters = QLowEnergyConnectionParameters()
+        self.connection_parameters.setIntervalRange(7.5, 200)
+        self.connection_parameters.setLatency(10)
+        self.connection_parameters.setSupervisionTimeout(4500)
+
+        self.emitter = WriteEmitter(parent=None, runner=True)
+
+
+    def run(self, local_device=None, **kwargs):
+        # self.device_handler.set_device(None)
+        print(self.local_device)
+        self.emitter.start()
+        self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(self.local_device)
+        self.device_discovery_agent.setLowEnergyDiscoveryTimeout(4000)
+        self.device_discovery_agent.deviceDiscovered.connect(self.add_device)
+        self.device_discovery_agent.finished.connect(self.scan_finished)
+        self.device_discovery_agent.errorOccurred.connect(self.error_occurred)
+
+        self.device_discovery_agent.start(QBluetoothDeviceDiscoveryAgent.LowEnergyMethod)
+
+    def error_occurred(self, error):
+        print(f"Discovery Error occurred: {error} - {self.device_discovery_agent.errorString()}")
+
+    def add_device(self, device):
+        if QBluetoothAddress(device.address()) == QBluetoothAddress(self.blacklist_address):
+            return
+        self.remote_devices.append(device)
+
+        for services in device.serviceUuids():
+            if services == QBluetoothUuid(0x1826):
+                self.device_discovery_agent.stop()
+                self.scan_finished()
+
+    def scan_finished(self):
+        print("Scan finished")
+        if self.remote_devices:
+            print(f"Found BT devices: {len(self.remote_devices)}")
+            for device in self.remote_devices:
+                print(f"d {device.address()} b {self.blacklist_address}")
+                for services in device.serviceUuids():
+                    if services == QBluetoothUuid(0x1826):
+                        self.connect_to_service(device.address())
+        else:
+            print("No BT devices found.")
+
+    def connect_to_service(self, address):
+        # self.device_discovery_agent.stop()
+
+        current_device = None
+        for entry in self.remote_devices:
+            device = entry
+
+            if device and device.address() == address:
+                current_device = device
+                break
+
+        if current_device:
+            self.set_device(current_device)
 
     def set_device(self, device):
         print("Setting device...")
@@ -76,15 +150,12 @@ class FtmsHandler(QThread):
 
             self.m_control.connected.connect(self.controller_connected)
             self.m_control.disconnected.connect(self.controller_disconnected)
+            self.m_control.errorOccurred.connect(self.error_occurred)
             # Connect
             if self.m_control.state() == QLowEnergyController.UnconnectedState:
                 self.m_control.connectToDevice()
             else:
                 print("wrong state")
-
-    def service_discovered(self, gatt):
-        if gatt == QBluetoothUuid(0x1826):
-            self.m_foundFtmsService = True
 
     def service_scan_done(self):
 
@@ -101,10 +172,16 @@ class FtmsHandler(QThread):
         if self.m_service:
             self.m_service.stateChanged.connect(self.service_state_changed)
             self.m_service.characteristicChanged.connect(self.update_ftms_value)
-            self.m_service.descriptorWritten.connect(self.confirmed_descriptor_write)
+            # self.m_service.descriptorWritten.connect(self.confirmed_descriptor_write)
             self.m_service.discoverDetails()
         else:
             print("FTMS Service not found.")
+
+    def update_ftms(self, value):
+        if self.m_service is not None and self.control_point_char is not None:
+            self.m_service.writeCharacteristic(self.control_point_char, QByteArray(value),
+                                               QLowEnergyService.WriteMode.WriteWithoutResponse)
+            time.sleep(0.1)
 
     def service_state_changed(self, switch):
         if switch == QLowEnergyService.RemoteServiceDiscovering:
@@ -139,15 +216,7 @@ class FtmsHandler(QThread):
                     self.control_point_char = self.m_service.characteristic(
                         QBluetoothUuid(0x2AD9))
                     self.m_service.characteristicWritten.connect(self.write_success)
-            self.ftms_co_signal.emit(True)
-
-    def update_ftms(self, value):
-        if self.m_service is not None and self.control_point_char is not None:
-            self.m_service.writeCharacteristic(self.control_point_char, QByteArray(value))
-
-    def write_success(self):
-        pass  # for later?
-        # print("write success")
+            self.emitter.emit_ftms_co_signal(True)
 
     def update_ftms_value(self, c, value):
         # ignore any other characteristic change. Shouldn't really happen though
@@ -160,15 +229,14 @@ class FtmsHandler(QThread):
         if c.uuid() == QBluetoothUuid(0x2ACD):
             # FTMS Data
             ftms_value = value.data()
-            self.ftms_td_signal.emit(ftms_value)
+            self.emitter.emit_ftms_td_signal(ftms_value)
         elif c.uuid() == QBluetoothUuid(0x2ADA):
             ftms_status = value.data()
-            self.ftms_st_signal.emit(ftms_status)
+            self.emitter.emit_ftms_st_signal(ftms_status)
         elif c.uuid() == QBluetoothUuid(0x2AD3):
             training_status = value.data()
-            self.ftms_ts_signal.emit(training_status)
-        else:
-            return
+            self.emitter.emit_ftms_ts_signal(training_status)
+        time.sleep(0.05)
 
     def confirmed_descriptor_write(self, d, value):
         if (d.isValid() and d == self.m_notificationDesc
@@ -184,90 +252,23 @@ class FtmsHandler(QThread):
             self.m_control.disconnectFromDevice()
         self.m_service = None
 
+    def controller_connected(self):
+        self.m_control.discoverServices()
 
-class BleCentral(QThread):
-    QLoggingCategory.setFilterRules("qt.bluetooth* = true")
-    ftms_td_signal = Signal(bytearray)
-    ftms_st_signal = Signal(bytearray)
-    ftms_ts_signal = Signal(bytearray)
-    ftms_co_signal = Signal(bool)
+    def controller_disconnected(self):
+        print("LowEnergy controller disconnected")  # reconnect later?
+        # self.set_device(self.m_currentDevice)
+        self.emitter.emit_ftms_co_signal(False)
 
-    def __init__(self, parent=None, local_device=None, **kwargs):
-        super(BleCentral, self).__init__(parent)
-        self.blacklist_address = kwargs.get('blacklist_address', None)
-        self.remote_devices = []
-        self.ftms_device = ""
-        self.device_handler = FtmsHandler(parent=None, local_device=local_device)
-        self.local_device = local_device
+    def service_discovered(self, gatt):
+        if gatt == QBluetoothUuid(0x1826):
+            self.m_foundFtmsService = True
 
-    @Slot()
-    def forward_ftms_td(self, data):
-        self.ftms_td_signal.emit(data)
-
-    @Slot()
-    def forward_ftms_st(self, data):
-        self.ftms_st_signal.emit(data)
-
-    @Slot()
-    def forward_ftms_ts(self, data):
-        self.ftms_ts_signal.emit(data)
-
-    @Slot()
-    def forward_ftms_co(self, data):
-        self.ftms_co_signal.emit(data)
-
-    def run(self):
-        self.device_handler.set_device(None)
-        self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(self.local_device)
-        self.device_discovery_agent.setLowEnergyDiscoveryTimeout(5000)
-        self.device_discovery_agent.deviceDiscovered.connect(self.add_device)
-        self.device_discovery_agent.finished.connect(self.scan_finished)
-        self.device_handler.ftms_td_signal.connect(self.forward_ftms_td)
-        self.device_handler.ftms_st_signal.connect(self.forward_ftms_st)
-        self.device_handler.ftms_ts_signal.connect(self.forward_ftms_ts)
-        self.device_handler.ftms_co_signal.connect(self.forward_ftms_co)
-        self.device_discovery_agent.start(QBluetoothDeviceDiscoveryAgent.LowEnergyMethod)
-
-    @Slot(QBluetoothDeviceInfo)
-    def add_device(self, device):
-        if QBluetoothAddress(device.address()) == QBluetoothAddress(self.blacklist_address):
-            return
-        self.remote_devices.append(device)
-
-        for services in device.serviceUuids():
-            if services == QBluetoothUuid(0x1826):
-                self.device_discovery_agent.stop()
-                self.scan_finished()
-
-    @Slot()
-    def scan_finished(self):
-        if self.remote_devices:
-            print(f"Found BT devices: {len(self.remote_devices)}")
-            for device in self.remote_devices:
-                print(f"d {device.address()} b {self.blacklist_address}")
-                for services in device.serviceUuids():
-                    if services == QBluetoothUuid(0x1826):
-                        self.connect_to_service(device.address())
-        else:
-            print("No BT devices found.")
-
-    @Slot(str)
-    def connect_to_service(self, address):
-        self.device_discovery_agent.stop()
-
-        current_device = None
-        for entry in self.remote_devices:
-            device = entry
-
-            if device and device.address() == address:
-                current_device = device
-                break
-
-        if current_device:
-            self.device_handler.set_device(current_device)
+    def write_success(self):
+        pass  # for later?
+        # print("write success")
 
     def stop(self):
-        self.device_handler.disconnect_service()
-        # self.device_discovery_agent.stop()
-        # self.device_handler.m_control.disconnectFromDevice()
-        self.terminate()
+        self.disconnect_service()
+        self.emitter.stop()
+

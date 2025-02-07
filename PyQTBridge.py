@@ -7,7 +7,7 @@ import time
 
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QSizePolicy, QStyleFactory
+from PySide6.QtWidgets import QSizePolicy, QStyleFactory, QTextEdit
 from PySide6.QtBluetooth import (QBluetoothAddress,
                                  QBluetoothLocalDevice)
 
@@ -44,6 +44,7 @@ class TreadmillGUI(QtWidgets.QWidget):
         self.treadmill_dongle = None
         self.peripheral_dongle = None
         self.ftms_connected = False
+        self.output_text = ""
 
         # Bluetooth adapter selection
         self.create_connect_disconnect_buttons()
@@ -61,6 +62,18 @@ class TreadmillGUI(QtWidgets.QWidget):
         self.set_button_states(False)
 
         self.running = False
+        self.create_output()
+
+    def create_output(self):
+        output_group = QtWidgets.QGroupBox("Output")
+        output_layout = QtWidgets.QGridLayout()
+        output_group.setLayout(output_layout)
+        output_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.output_text = QTextEdit()
+        self.output_text.setReadOnly(True)
+        self.output_text.setLineWrapMode(QTextEdit.NoWrap)
+        output_layout.addWidget(self.output_text, 0, 0, 4, 2)
+        self.layout.addWidget(output_group, 5, 0, 5, 4)
 
     def create_connect_disconnect_buttons(self):  # connect and disconnect buttons
         connect_disconnect_group = QtWidgets.QGroupBox("Connect/Disconnect")
@@ -103,42 +116,43 @@ class TreadmillGUI(QtWidgets.QWidget):
         self.sender().setDisabled(True)
         self.disconnect_btn.setDisabled(True)
         if self.peripheral_dongle is None:
-            self.thread[1] = central.BleCentral(parent=None, local_device=QBluetoothAddress(self.treadmill_dongle))
+            self.thread[1] = central.BleCentral(local_device=QBluetoothAddress(self.treadmill_dongle))
         else:
-            self.thread[1] = central.BleCentral(parent=None, local_device=QBluetoothAddress(self.treadmill_dongle),
-                                                blacklist_address=self.peripheral_dongle)
-            self.thread[3] = peripheral.FtmsPeripheral(local_device=QBluetoothAddress(self.peripheral_dongle))
+            self.thread[1] = central.BleCentral(local_device=QBluetoothAddress(self.treadmill_dongle),
+                                                blacklist_address=QBluetoothAddress(self.peripheral_dongle))
 
-        self.thread[1].start()
-        self.thread[1].ftms_td_signal.connect(self.ftms_td)
-        self.thread[1].ftms_st_signal.connect(self.ftms_st)
-        self.thread[1].ftms_ts_signal.connect(self.ftms_ts)
-        self.thread[1].ftms_co_signal.connect(self.connected)
+        self.thread[1].run()
+        self.thread[1].emitter.ftms_td_signal.connect(self.ftms_td)
+        self.thread[1].emitter.ftms_st_signal.connect(self.ftms_st)
+        self.thread[1].emitter.ftms_ts_signal.connect(self.ftms_ts)
+        self.thread[1].emitter.ftms_co_signal.connect(self.connected)
 
         if 2 not in self.thread:
             self.thread[2] = antstride.AntSend()
             self.thread[2].start()
 
-        if 3 in self.thread:
-            self.thread[3].run()
-            self.thread[3].emitter.control_point.connect(self.control_point)
-
     def control_point(self, data):
-        self.thread[1].device_handler.update_ftms(data)
+        self.thread[1].update_ftms(data)
 
     def connected(self, data):
+        if self.peripheral_dongle and 3 not in self.thread:
+            self.thread[3] = peripheral.FtmsPeripheral(local_device=QBluetoothAddress(self.peripheral_dongle))
+
         if data and not self.ftms_connected:
             self.disconnect_btn.setDisabled(False)
             self.set_button_states(True)
             self.ftms_connected = True
+            if 3 in self.thread:
+                self.thread[3].run()
+                self.thread[3].emitter.control_point.connect(self.control_point)
         elif self.ftms_connected and not data:
             print("reconnect ftms")
             self.thread[1].stop()
-            time.sleep(1)
+            time.sleep(2)
             self.thread[1].start()
 
     def ftms_td(self, data):
-        if self.thread[3]:
+        if 3 in self.thread:
             self.thread[3].ftms_value = data
         payload = data[2:]
         fmt = '<HHBHHHHBBH'
@@ -148,11 +162,11 @@ class TreadmillGUI(QtWidgets.QWidget):
         self.update_data(self.values)
 
     def ftms_st(self, data):
-        if self.thread[3]:
+        if 3 in self.thread:
             self.thread[3].ftms_status = data
 
     def ftms_ts(self, data):
-        if self.thread[3]:
+        if 3 in self.thread:
             self.thread[3].training_status = data
 
     def update_data(self, data):
@@ -181,7 +195,7 @@ class TreadmillGUI(QtWidgets.QWidget):
         if self.disconnect_btn.text() == "Disconnect":
             self.thread[1].stop()
 
-            if self.thread[3]:
+            if 3 in self.thread:
                 self.thread[3].stop()
 
             print("set button")
@@ -318,49 +332,55 @@ class TreadmillGUI(QtWidgets.QWidget):
     def set_pace(self, pace):
         speed = 3600 / ((int((pace.split(":")[0])) * 60) + int(pace.split(":")[1]))
         speed_bytes = bytearray([0x02]) + int(speed*100).to_bytes(2, byteorder='little')
-        self.thread[1].device_handler.update_ftms(speed_bytes)
+        self.thread[1].update_ftms(speed_bytes)
 
     def set_incline(self, incline):
         incline_bytes = bytearray([0x03]) + int(incline*10).to_bytes(2, byteorder='little')
-        self.thread[1].device_handler.update_ftms(incline_bytes)
+        self.thread[1].update_ftms(incline_bytes)
 
     def increase_speed(self):
         speed = self.values[0] + 20
         speed_bytes = bytearray([0x02]) + int(speed).to_bytes(2, byteorder='little')
-        self.thread[1].device_handler.update_ftms(speed_bytes)
+        self.thread[1].update_ftms(speed_bytes)
 
     def decrease_speed(self):
         speed = self.values[0] - 20
         speed_bytes = bytearray([0x02]) + int(speed).to_bytes(2, byteorder='little')
-        self.thread[1].device_handler.update_ftms(speed_bytes)
+        self.thread[1].update_ftms(speed_bytes)
 
     def increase_incline(self):
         incline = self.values[3] + 5
         incline_bytes = bytearray([0x03]) + int(incline).to_bytes(2, byteorder='little')
-        self.thread[1].device_handler.update_ftms(incline_bytes)
+        self.thread[1].update_ftms(incline_bytes)
 
     def decrease_incline(self):
         incline = self.values[3] - 5
         incline_bytes = bytearray([0x03]) + int(incline).to_bytes(2, byteorder='little')
-        self.thread[1].device_handler.update_ftms(incline_bytes)
+        self.thread[1].update_ftms(incline_bytes)
 
     def start_pause(self):
         if self.running is False:
-            self.thread[1].device_handler.update_ftms(bytearray([0x07]))
+            self.thread[1].update_ftms(bytearray([0x07]))
             self.running = True
         else:
-            self.thread[1].device_handler.update_ftms(bytearray([0x08, 0x02]))
+            self.thread[1].update_ftms(bytearray([0x08, 0x02]))
             self.running = False
 
     def stop(self):
-        self.thread[1].device_handler.update_ftms(bytearray([0x08, 0x02]))
+        self.thread[1].update_ftms(bytearray([0x08, 0x02]))
         time.sleep(0.25)
-        self.thread[1].device_handler.update_ftms(bytearray([0x00]))
+        self.thread[1].update_ftms(bytearray([0x00]))
         time.sleep(0.25)
-        self.thread[1].device_handler.update_ftms(bytearray([0x01]))
+        self.thread[1].update_ftms(bytearray([0x01]))
         time.sleep(0.25)
-        self.thread[1].device_handler.update_ftms(bytearray([0x00]))
+        self.thread[1].update_ftms(bytearray([0x00]))
         self.running = False
+
+    def closeEvent(self, event):
+        print("Closing...")
+        for i in self.thread:
+            self.thread[i].stop()
+
 
 
 if __name__ == "__main__":

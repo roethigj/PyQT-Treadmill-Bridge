@@ -39,9 +39,7 @@ class AntSend(QThread):
         self.LastTimeEvent = time.time()
         self.ElapsedSeconds = 0
 
-        self.node = Node()
-        self.node_thread = None
-        self.channel = None
+
 
         # Building up the Datapages
         # This is just for demo purpose and can/will look different for every implementation
@@ -166,6 +164,8 @@ class AntSend(QThread):
     # Open Channel
     def run(self):
         print("ANT+ Channel is open")
+        self.node = Node()
+        self.node_thread = None
 
         # self.node = Node()  # initialize the ANT+ device as node, now in init
         # self.x = asyncio.create_task(self.run_ble())
@@ -193,10 +193,8 @@ class AntSend(QThread):
 
     def stop(self):
         print("Closing ANT+ Channel...")
-        self.channel.close()
+        # self.channel.close()
         self.node.stop()
-        self.node = None
-        self.terminate()
-
+       # self.node_thread.join()
         print("Closed ANT+ Channel...")
 ########################################################################################################################

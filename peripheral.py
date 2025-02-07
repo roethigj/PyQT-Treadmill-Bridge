@@ -5,7 +5,8 @@ from PySide6.QtBluetooth import (QBluetoothUuid, QLowEnergyAdvertisingData,
                                  QLowEnergyCharacteristic,
                                  QLowEnergyCharacteristicData,
                                  QLowEnergyController,
-                                 QLowEnergyServiceData)
+                                 QLowEnergyServiceData,
+                                 QLowEnergyConnectionParameters)
 from PySide6.QtCore import QByteArray, QTimer, Signal, QThread
 
 from qt_ftms import services as ftms_services
@@ -47,6 +48,11 @@ class FtmsPeripheral:
         self.local_device = local_device
         self.le_controller = QLowEnergyController.createPeripheral(self.local_device)
         self.le_controller.disconnected.connect(self.reconnect)
+
+        self.connection_parameters = QLowEnergyConnectionParameters()
+        self.connection_parameters.setIntervalRange(7.5, 200)
+        self.connection_parameters.setLatency(10)
+        self.connection_parameters.setSupervisionTimeout(4500)
 
         self.ftms_value = QByteArray(b'\x8C\x05'  # 1000 110000000101 0011 0001 1010 0000 
                                      b'\x00\x00\x00\x00\x00\x00\x00\x00'
