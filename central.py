@@ -278,6 +278,7 @@ class BleCentral:
         # print("write success")
 
     def stop(self):
-        self.disconnect_service()
         self.emitter.stop()
+        time.sleep(0.5)
+        self.disconnect_service()
 
