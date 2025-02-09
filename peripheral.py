@@ -15,6 +15,7 @@ from qt_ftms import services as ftms_services
 class WriteEmitter(QThread):
     control_point = Signal(bytearray)
     peripheral_output = Signal(str)
+    peripheral_co_signal = Signal(bool)
 
     def __init__(self, parent=None,
                  runner=False):
@@ -27,6 +28,9 @@ class WriteEmitter(QThread):
 
     def emit_data(self, data):
         self.control_point.emit(data)
+
+    def emit_peripheral_co_signal(self, data):
+        self.peripheral_co_signal.emit(data)
 
     def emit_peripheral_output(self, data):
         output = "Peripheral: " + data
@@ -66,6 +70,8 @@ class FtmsPeripheral:
         self.training_status = QByteArray(b'\x02\x01')
         self.emitter = WriteEmitter(parent=None, runner=True)
 
+        self.peripheral_connected = False
+
         self.notification_timer = QTimer()
 
         self.services = []
@@ -94,11 +100,17 @@ class FtmsPeripheral:
     def connected(self, data):
         print("State changed", data)
         if data == QLowEnergyController.ControllerState.ConnectedState:
+            self.peripheral_connected = True
             self.emitter.emit_peripheral_output("Connected.")
+        elif data == QLowEnergyController.ControllerState.UnconnectedState:
+            self.peripheral_connected = False
+            self.emitter.emit_peripheral_co_signal(False)
 
     def reconnect(self):
         # service = le_controller.addService(service_data)
         self.emitter.emit_peripheral_output("Connection lost.")
+        self.peripheral_connected = False
+        self.emitter.emit_peripheral_co_signal(False)
         if not len(self.services) == 0:
             pass
             # self.le_controller.startAdvertising(QLowEnergyAdvertisingParameters(),

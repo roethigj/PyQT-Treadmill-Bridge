@@ -164,6 +164,7 @@ class TreadmillGUI(QtWidgets.QWidget):
                 self.thread[3].run()
                 self.thread[3].emitter.control_point.connect(self.control_point)
                 self.thread[3].emitter.peripheral_output.connect(self.received_output)
+                self.thread[3].emitter.peripheral_co_signal.connect(self.peripheral_connected)
         elif self.ftms_connected and not data:
             self.write_output("FTMS disconnected unintended... reconnect.")
             self.thread[1].stop()
@@ -175,6 +176,17 @@ class TreadmillGUI(QtWidgets.QWidget):
             self.set_button_states(False)
             self.ftms_connected = False
             self.write_output("No FTMS connected... retry?")
+
+    def peripheral_connected(self, data):
+        if not data:
+            self.write_output("Peripheral disconnected... rebuild peripheral.")
+            self.thread[3].stop()
+            time.sleep(1)
+            self.thread[3] = peripheral.FtmsPeripheral(local_device=QBluetoothAddress(self.peripheral_dongle))
+            self.thread[3].run()
+            self.thread[3].emitter.control_point.connect(self.control_point)
+            self.thread[3].emitter.peripheral_output.connect(self.received_output)
+            self.thread[3].emitter.peripheral_co_signal.connect(self.peripheral_connected)
 
     def ftms_td(self, data):
         if 3 in self.thread:
