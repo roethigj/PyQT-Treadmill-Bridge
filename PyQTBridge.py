@@ -231,8 +231,8 @@ class TreadmillGUI(QtWidgets.QWidget):
     def disconnect_button(self):
         if self.disconnect_btn.text() == "Disconnect":
             self.ftms_connected = False
-
-            self.thread[1].stop()
+            if 1 in self.thread:
+                self.thread[1].stop()
 
             if 3 in self.thread:
                 self.thread[3].stop()
