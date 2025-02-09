@@ -15,7 +15,7 @@ This version uses QtBluetooth.
 3. `openant`
 4. Bluetooth adapter to connect to FTMS (treadmill)
 5. ANT+ Adapter to connect to Forerunner (as stride sensor: pace and distance)
-6. Bluetooth adapter to connect to mobile for control
+6. Bluetooth adapter to connect to mobile for control. (It looks like this works for Linux only. Windows doesn't support 2 BT dongles)
 
 Make sure python have access to bluetooth. e.g. $ sudo setcap 'cap_net_raw,cap_net_admin+eip' PATH_TO_PYTHON_EXECUTABLE
 

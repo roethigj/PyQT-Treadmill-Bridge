@@ -404,13 +404,14 @@ class TreadmillGUI(QtWidgets.QWidget):
             self.running = False
 
     def stop(self):
-        self.thread[1].update_ftms(bytearray([0x08, 0x02]))
-        time.sleep(0.25)
-        self.thread[1].update_ftms(bytearray([0x00]))
-        time.sleep(0.25)
-        self.thread[1].update_ftms(bytearray([0x01]))
-        time.sleep(0.25)
-        self.thread[1].update_ftms(bytearray([0x00]))
+        if 1 in self.thread:
+            self.thread[1].update_ftms(bytearray([0x08, 0x02]))
+            time.sleep(0.25)
+            self.thread[1].update_ftms(bytearray([0x00]))
+            time.sleep(0.25)
+            self.thread[1].update_ftms(bytearray([0x01]))
+            time.sleep(0.25)
+            self.thread[1].update_ftms(bytearray([0x00]))
         self.running = False
 
     def closeEvent(self, event):
