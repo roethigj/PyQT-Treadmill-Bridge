@@ -279,6 +279,5 @@ class BleCentral:
 
     def stop(self):
         self.emitter.stop()
-        time.sleep(0.5)
         self.disconnect_service()
 

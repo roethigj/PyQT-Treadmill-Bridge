@@ -166,7 +166,6 @@ class TreadmillGUI(QtWidgets.QWidget):
                 self.thread[3].emitter.peripheral_output.connect(self.received_output)
                 self.thread[3].emitter.peripheral_co_signal.connect(self.peripheral_connected)
         elif self.ftms_connected and not data:
-            self.write_output("Button:", self.disconnect_btn.text())
             self.write_output("FTMS disconnected unintended... reconnect.")
             self.thread[1].stop()
             time.sleep(2)
