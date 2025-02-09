@@ -14,6 +14,7 @@ from qt_ftms import services as ftms_services
 
 class WriteEmitter(QThread):
     control_point = Signal(bytearray)
+    peripheral_output = Signal(str)
 
     def __init__(self, parent=None,
                  runner=False):
@@ -22,13 +23,14 @@ class WriteEmitter(QThread):
 
     def run(self):
         while self.runner:
-            QThread.sleep(1)
-            # pass
-        print("end run")
+            QThread.msleep(200)
 
     def emit_data(self, data):
-        print(data)
         self.control_point.emit(data)
+
+    def emit_peripheral_output(self, data):
+        output = "Peripheral: " + data
+        self.peripheral_output.emit(output)
 
     def stop(self):
         self.runner = False
@@ -48,6 +50,9 @@ class FtmsPeripheral:
         self.local_device = local_device
         self.le_controller = QLowEnergyController.createPeripheral(self.local_device)
         self.le_controller.disconnected.connect(self.reconnect)
+        self.le_controller.connected.connect(self.connected)
+        self.le_controller.stateChanged.connect(self.connected)
+
 
         self.connection_parameters = QLowEnergyConnectionParameters()
         self.connection_parameters.setIntervalRange(7.5, 200)
@@ -86,14 +91,20 @@ class FtmsPeripheral:
                                             self.advertising_data, self.advertising_data)
         self.emitter.start()
 
+    def connected(self, data):
+        print("State changed", data)
+        if data == QLowEnergyController.ControllerState.ConnectedState:
+            self.emitter.emit_peripheral_output("Connected.")
+
     def reconnect(self):
         # service = le_controller.addService(service_data)
+        self.emitter.emit_peripheral_output("Connection lost.")
         if not len(self.services) == 0:
-            # pass
+            pass
             # self.le_controller.startAdvertising(QLowEnergyAdvertisingParameters(),
             #                                    self.advertising_data, self.advertising_data)
-            self.__init__(local_device=self.local_device)
-            self.run()
+            #self.__init__(local_device=self.local_device)
+            #self.run()
 
     def notification_provider(self):
         for service in self.services:

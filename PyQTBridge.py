@@ -5,6 +5,8 @@ import peripheral
 import struct
 import time
 
+from contextlib import redirect_stdout, redirect_stderr
+
 from PySide6 import QtWidgets, QtGui
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QSizePolicy, QStyleFactory, QTextEdit
@@ -71,9 +73,13 @@ class TreadmillGUI(QtWidgets.QWidget):
         output_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.output_text = QTextEdit()
         self.output_text.setReadOnly(True)
+        self.output_text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.output_text.setLineWrapMode(QTextEdit.NoWrap)
         output_layout.addWidget(self.output_text, 0, 0, 4, 2)
         self.layout.addWidget(output_group, 5, 0, 5, 4)
+
+    def write_output(self, text):
+        self.output_text.append(text)
 
     def create_connect_disconnect_buttons(self):  # connect and disconnect buttons
         connect_disconnect_group = QtWidgets.QGroupBox("Connect/Disconnect")
@@ -126,8 +132,20 @@ class TreadmillGUI(QtWidgets.QWidget):
         self.thread[1].emitter.ftms_st_signal.connect(self.ftms_st)
         self.thread[1].emitter.ftms_ts_signal.connect(self.ftms_ts)
         self.thread[1].emitter.ftms_co_signal.connect(self.connected)
+        self.thread[1].emitter.central_output.connect(self.received_output)
 
         if 2 not in self.thread:
+            self.thread[2] = antstride.AntSend()
+            self.thread[2].start()
+            self.thread[2].finished.connect(self.ant_died)
+
+    def received_output(self, data):
+        self.write_output(data)
+
+    def ant_died(self):
+        if self.ftms_connected:
+            self.thread[2].stop()
+            self.write_output("Ant died... reconnect")
             self.thread[2] = antstride.AntSend()
             self.thread[2].start()
 
@@ -135,7 +153,7 @@ class TreadmillGUI(QtWidgets.QWidget):
         self.thread[1].update_ftms(data)
 
     def connected(self, data):
-        if self.peripheral_dongle and 3 not in self.thread:
+        if self.peripheral_dongle and 3 not in self.thread and data:
             self.thread[3] = peripheral.FtmsPeripheral(local_device=QBluetoothAddress(self.peripheral_dongle))
 
         if data and not self.ftms_connected:
@@ -145,11 +163,18 @@ class TreadmillGUI(QtWidgets.QWidget):
             if 3 in self.thread:
                 self.thread[3].run()
                 self.thread[3].emitter.control_point.connect(self.control_point)
+                self.thread[3].emitter.peripheral_output.connect(self.received_output)
         elif self.ftms_connected and not data:
-            print("reconnect ftms")
+            self.write_output("FTMS disconnected unintended... reconnect.")
             self.thread[1].stop()
             time.sleep(2)
             self.thread[1].run()
+        elif not data and not self.ftms_connected:
+            self.thread[1].stop()
+            # self.disconnect_btn.setDisabled(True)
+            self.set_button_states(False)
+            self.ftms_connected = False
+            self.write_output("No FTMS connected... retry?")
 
     def ftms_td(self, data):
         if 3 in self.thread:
@@ -204,10 +229,9 @@ class TreadmillGUI(QtWidgets.QWidget):
             self.ftms_connected = False
             self.connect_btn.setEnabled(True)
         else:
-            if 2 in self.thread:
-                self.thread[2].stop()
+            self.write_output("shutting down ...")
+            self.stop()
             self.close()
-            app.quit()
 
     def create_data_display(self):
         data_group = QtWidgets.QGroupBox("Treadmill Data")
@@ -377,10 +401,14 @@ class TreadmillGUI(QtWidgets.QWidget):
         self.running = False
 
     def closeEvent(self, event):
+        self.ftms_connected = False
         print("Closing...")
+        self.write_output("Shutting down...")
         for i in self.thread:
             self.thread[i].stop()
-
+            print(f"Thread {i} stopped.")
+        time.sleep(2)
+        app.quit()
 
 
 if __name__ == "__main__":

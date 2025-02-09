@@ -16,6 +16,7 @@ class WriteEmitter(QThread):
     ftms_st_signal = Signal(bytearray)
     ftms_ts_signal = Signal(bytearray)
     ftms_co_signal = Signal(bool)
+    central_output = Signal(str)
 
     def __init__(self, parent=None,
                  runner=False):
@@ -24,7 +25,7 @@ class WriteEmitter(QThread):
 
     def run(self):
         while self.runner:
-            QThread.sleep(1)
+            QThread.msleep(200)
             # pass
 
     def emit_ftms_td_signal(self, data):
@@ -38,6 +39,10 @@ class WriteEmitter(QThread):
 
     def emit_ftms_co_signal(self, data):
         self.ftms_co_signal.emit(data)
+
+    def emit_central_output(self, data):
+        output = "Central: " + data
+        self.central_output.emit(output)
 
     def stop(self):
         self.runner = False
@@ -74,10 +79,8 @@ class BleCentral:
 
         self.emitter = WriteEmitter(parent=None, runner=True)
 
-
     def run(self, local_device=None, **kwargs):
         # self.device_handler.set_device(None)
-        print(self.local_device)
         self.emitter.start()
         self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(self.local_device)
         self.device_discovery_agent.setLowEnergyDiscoveryTimeout(4000)
@@ -88,7 +91,7 @@ class BleCentral:
         self.device_discovery_agent.start(QBluetoothDeviceDiscoveryAgent.LowEnergyMethod)
 
     def error_occurred(self, error):
-        print(f"Discovery Error occurred: {error} - {self.device_discovery_agent.errorString()}")
+        self.emitter.emit_central_output(f"Discovery Error occurred: {error} - {self.device_discovery_agent.errorString()}")
 
     def add_device(self, device):
         if QBluetoothAddress(device.address()) == QBluetoothAddress(self.blacklist_address):
@@ -101,7 +104,9 @@ class BleCentral:
                 self.scan_finished()
 
     def scan_finished(self):
+        self.device_discovery_agent.stop()
         print("Scan finished")
+        ftms_found = False
         if self.remote_devices:
             print(f"Found BT devices: {len(self.remote_devices)}")
             for device in self.remote_devices:
@@ -109,8 +114,12 @@ class BleCentral:
                 for services in device.serviceUuids():
                     if services == QBluetoothUuid(0x1826):
                         self.connect_to_service(device.address())
+                        ftms_found = True
+            if not ftms_found:
+                self.emitter.emit_central_output("FTMS device not found.")
+                self.emitter.emit_ftms_co_signal(False)
         else:
-            print("No BT devices found.")
+            self.emitter.emit_central_output("No BT devices found.")
 
     def connect_to_service(self, address):
         # self.device_discovery_agent.stop()
@@ -154,8 +163,9 @@ class BleCentral:
             # Connect
             if self.m_control.state() == QLowEnergyController.UnconnectedState:
                 self.m_control.connectToDevice()
+                self.emitter.emit_central_output("Connecting to " + self.m_currentDevice.address().toString())
             else:
-                print("wrong state")
+                self.emitter.emit_central_output("LE Controller wrong state")
 
     def service_scan_done(self):
 
@@ -175,7 +185,7 @@ class BleCentral:
             # self.m_service.descriptorWritten.connect(self.confirmed_descriptor_write)
             self.m_service.discoverDetails()
         else:
-            print("FTMS Service not found.")
+            self.emitter.emit_central_output("FTMS Service not found.")
 
     def update_ftms(self, value):
         if self.m_service is not None and self.control_point_char is not None:
@@ -217,6 +227,7 @@ class BleCentral:
                         QBluetoothUuid(0x2AD9))
                     self.m_service.characteristicWritten.connect(self.write_success)
             self.emitter.emit_ftms_co_signal(True)
+            self.emitter.emit_central_output("Connected")
 
     def update_ftms_value(self, c, value):
         # ignore any other characteristic change. Shouldn't really happen though
@@ -256,8 +267,6 @@ class BleCentral:
         self.m_control.discoverServices()
 
     def controller_disconnected(self):
-        print("LowEnergy controller disconnected")  # reconnect later?
-        # self.set_device(self.m_currentDevice)
         self.emitter.emit_ftms_co_signal(False)
 
     def service_discovered(self, gatt):

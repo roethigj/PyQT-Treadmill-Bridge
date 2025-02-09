@@ -39,6 +39,8 @@ class AntSend(QThread):
         self.LastTimeEvent = time.time()
         self.ElapsedSeconds = 0
 
+        self.runner = True
+
 
 
         # Building up the Datapages
@@ -188,13 +190,14 @@ class AntSend(QThread):
         self.node_thread = threading.Thread(target=self.node_handler)
         self.node_thread.daemon = True
         self.node_thread.start()
-        while True:
-            time.sleep(4)
+        while self.runner:
+            QThread.msleep(200)
 
     def stop(self):
         print("Closing ANT+ Channel...")
-        # self.channel.close()
+        self.channel.close()
         self.node.stop()
+        self.runner = False
        # self.node_thread.join()
         print("Closed ANT+ Channel...")
 ########################################################################################################################
