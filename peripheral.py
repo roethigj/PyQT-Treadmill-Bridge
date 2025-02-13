@@ -57,7 +57,6 @@ class FtmsPeripheral:
         self.le_controller.connected.connect(self.connected)
         self.le_controller.stateChanged.connect(self.connected)
 
-
         self.connection_parameters = QLowEnergyConnectionParameters()
         self.connection_parameters.setIntervalRange(7.5, 200)
         self.connection_parameters.setLatency(10)
@@ -111,12 +110,6 @@ class FtmsPeripheral:
         self.emitter.emit_peripheral_output("Connection lost.")
         self.peripheral_connected = False
         self.emitter.emit_peripheral_co_signal(False)
-        if not len(self.services) == 0:
-            pass
-            # self.le_controller.startAdvertising(QLowEnergyAdvertisingParameters(),
-            #                                    self.advertising_data, self.advertising_data)
-            #self.__init__(local_device=self.local_device)
-            #self.run()
 
     def notification_provider(self):
         for service in self.services:
@@ -135,6 +128,6 @@ class FtmsPeripheral:
         self.emitter.emit_data(value)
 
     def stop(self):
+        self.emitter.stop()
         self.le_controller.stopAdvertising()
         self.le_controller.disconnectFromDevice()
-        self.emitter.stop()

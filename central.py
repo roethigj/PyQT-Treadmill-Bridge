@@ -47,6 +47,7 @@ class WriteEmitter(QThread):
     def stop(self):
         self.runner = False
 
+
 class BleCentral:
     QLoggingCategory.setFilterRules("qt.bluetooth* = true")
 
@@ -68,18 +69,18 @@ class BleCentral:
         self.training_status_char = None
         self.control_point_char = None
 
-        self.m_addressType = QLowEnergyController.RemoteAddressType.RandomAddress
+        # self.m_addressType = QLowEnergyController.RemoteAddressType.RandomAddress
 
         self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(self.local_device)
 
         self.connection_parameters = QLowEnergyConnectionParameters()
-        self.connection_parameters.setIntervalRange(7.5, 200)
-        self.connection_parameters.setLatency(10)
-        self.connection_parameters.setSupervisionTimeout(4500)
+        self.connection_parameters.setIntervalRange(200, 2000)
+        self.connection_parameters.setLatency(300)
+        self.connection_parameters.setSupervisionTimeout(14500)
 
         self.emitter = WriteEmitter(parent=None, runner=True)
 
-    def run(self, local_device=None, **kwargs):
+    def run(self):
         # self.device_handler.set_device(None)
         self.emitter.start()
         self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(self.local_device)
@@ -91,7 +92,12 @@ class BleCentral:
         self.device_discovery_agent.start(QBluetoothDeviceDiscoveryAgent.LowEnergyMethod)
 
     def error_occurred(self, error):
-        self.emitter.emit_central_output(f"Discovery Error occurred: {error} - {self.device_discovery_agent.errorString()}")
+        self.emitter.emit_central_output(f"Discovery Error occurred: {error} - {self.m_control.errorString()} "
+                                         f"- {self.device_discovery_agent.errorString()}")
+        print(error)
+        if error == self.m_control.ConnectionError:
+            print("erkannt")
+            self.emitter.emit_ftms_co_signal(False)
 
     def add_device(self, device):
         if QBluetoothAddress(device.address()) == QBluetoothAddress(self.blacklist_address):
@@ -122,7 +128,7 @@ class BleCentral:
             self.emitter.emit_central_output("No BT devices found.")
 
     def connect_to_service(self, address):
-        # self.device_discovery_agent.stop()
+        self.device_discovery_agent.stop()
 
         current_device = None
         for entry in self.remote_devices:
@@ -152,7 +158,7 @@ class BleCentral:
             print(self.m_currentDevice.address())
             self.m_control = QLowEnergyController.createCentral(self.m_currentDevice, self.local_device)
             # [Connect-Signals-1]
-            self.m_control.setRemoteAddressType(self.m_addressType)
+            # self.m_control.setRemoteAddressType(self.m_addressType)
 
             self.m_control.serviceDiscovered.connect(self.service_discovered)
             self.m_control.discoveryFinished.connect(self.service_scan_done)
@@ -280,4 +286,3 @@ class BleCentral:
     def stop(self):
         self.emitter.stop()
         self.disconnect_service()
-

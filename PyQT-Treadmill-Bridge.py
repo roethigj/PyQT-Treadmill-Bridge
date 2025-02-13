@@ -172,13 +172,14 @@ class TreadmillGUI(QtWidgets.QWidget):
             self.thread[1].run()
         elif not data and not self.ftms_connected:
             self.thread[1].stop()
+            self.connect_btn.setDisabled(False)
             # self.disconnect_btn.setDisabled(True)
             self.set_button_states(False)
             self.ftms_connected = False
             self.write_output("No FTMS connected... retry?")
 
     def peripheral_connected(self, data):
-        if not data:
+        if not data and self.ftms_connected:
             self.write_output("Peripheral disconnected... rebuild peripheral.")
             self.thread[3].stop()
             time.sleep(1)
@@ -417,11 +418,10 @@ class TreadmillGUI(QtWidgets.QWidget):
     def closeEvent(self, event):
         self.ftms_connected = False
         print("Closing...")
-        self.write_output("Shutting down...")
         for i in self.thread:
             self.thread[i].stop()
             print(f"Thread {i} stopped.")
-        time.sleep(2)
+        time.sleep(0.5)
         app.quit()
 
 

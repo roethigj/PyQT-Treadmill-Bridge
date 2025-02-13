@@ -18,6 +18,7 @@ Channel_Frequency = 57
 
 
 class AntSend(QThread):
+
     def __init__(self):
         super(AntSend, self).__init__()
         self.ANTMessageCount = 0
@@ -159,6 +160,7 @@ class AntSend(QThread):
             time.sleep(1)
             # todo: raise exception to restart the whole process from bridge
             print('restarting...?')
+            self.stop()
 
     def node_handler(self):
         self.node.start()
@@ -195,7 +197,7 @@ class AntSend(QThread):
 
     def stop(self):
         print("Closing ANT+ Channel...")
-        self.channel.close()
+        # self.channel.close()  # can cause faults. Necessary?
         self.node.stop()
         self.runner = False
        # self.node_thread.join()
