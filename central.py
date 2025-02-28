@@ -72,6 +72,7 @@ class BleCentral:
         # self.m_addressType = QLowEnergyController.RemoteAddressType.RandomAddress
 
         self.device_discovery_agent = QBluetoothDeviceDiscoveryAgent(self.local_device)
+        self.device_discovery_agent.setLowEnergyDiscoveryTimeout(4000)
 
         self.connection_parameters = QLowEnergyConnectionParameters()
         self.connection_parameters.setIntervalRange(200, 2000)
@@ -94,9 +95,7 @@ class BleCentral:
     def error_occurred(self, error):
         self.emitter.emit_central_output(f"Discovery Error occurred: {error} - {self.m_control.errorString()} "
                                          f"- {self.device_discovery_agent.errorString()}")
-        print(error)
-        if error == self.m_control.ConnectionError:
-            print("erkannt")
+        if error == self.m_control.Error.ConnectionError:
             self.emitter.emit_ftms_co_signal(False)
 
     def add_device(self, device):

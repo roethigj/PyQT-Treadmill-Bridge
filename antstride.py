@@ -21,144 +21,165 @@ class AntSend(QThread):
 
     def __init__(self):
         super(AntSend, self).__init__()
-        self.ANTMessageCount = 0
-        self.ANTMessagePayload = [0, 0, 0, 0, 0, 0, 0, 0]
+        self.ant_message_count = 0
+        self.data_page_count = 0
 
         # Init Variables, needed
-        self.LastStrideTime = 0
-        self.StridesDone = 0
-        self.DistanceAccu = 0
-        self.Distance_Last = 0
-        self.Speed_Last = 0
-        self.TimeRollover = 0
+        self.last_stride_time = 0
+        self.strides_done = 0
+        self.distance_accu = 0
+        self.distance_last = 0
+        self.speed_last = 0
+        self.time_rollover = 0
+        self.time_rollover_h = 0
+        self.time_rollover_l_hex = 0
         self.treadmill_distance_old = 0
-        self.TreadmillSpeed = 0  # m/s
-        self.TreadmillCadence = 160
-        self.TreadmillDistance = 0
+        self.treadmill_speed = 0  # m/s
+        self.treadmill_cadence = 160
+        self.treadmill_distance = 0
+        self.calories = 0
+        self.calories_delta = 0
+        self.calories_last = 0
+        self.calories_total = 0
 
-        self.TimeProgramStart = time.time()
-        self.LastTimeEvent = time.time()
-        self.ElapsedSeconds = 0
+        self.treadmill_distance_delta = 0
+
+        self.last_time_event = time.time()
 
         self.runner = True
 
 
 
-        # Building up the Datapages
+        # Building up the Data Pages
         # This is just for demo purpose and can/will look different for every implementation
 
     def create_next_datapage(self):
         # Define Variables
-        UpdateLatency_7 = 0
+        update_latency = 0
 
-        self.ANTMessageCount += 1
+        self.ant_message_count += 1
 
         # Time Calculations
-        self.ElapsedSeconds = time.time() - self.LastTimeEvent
-        self.LastTimeEvent = time.time()
-        UpdateLatency_7 += self.ElapsedSeconds  # 1Second / 32 = 0,03125
-        UL_7 = int(UpdateLatency_7 / 0.03125)
+        elapsed_seconds = time.time() - self.last_time_event
+        self.last_time_event = time.time()
+        update_latency += elapsed_seconds  # 1Second / 32 = 0,03125
+        update_latency = int(update_latency / 0.03125)
 
         # Stride Count, Accumulated strides.
         # This value is incremented once for every two footfalls.
-        StrideCountUpValue = 60.0 / (self.TreadmillCadence / 2.0)  # In our Example 0,75
-        while self.LastStrideTime > StrideCountUpValue:
-            self.StridesDone += 1
-            self.LastStrideTime -= StrideCountUpValue
-        self.LastStrideTime += self.ElapsedSeconds
-        if self.StridesDone > 255:
-            self.StridesDone -= 255
+        stride_count_up_value = 60.0 / (self.treadmill_cadence / 2.0)  # In our Example 0,75
+        while self.last_stride_time > stride_count_up_value:
+            self.strides_done += 1
+            self.last_stride_time -= stride_count_up_value
+        self.last_stride_time += elapsed_seconds
+        if self.strides_done > 255:
+            self.strides_done -= 255
+            if self.strides_done > 255: # after reconnect
+                self.strides_done = 1
 
+        self.calories_delta = self.calories - self.calories_last
+        self.calories_last = self.calories
+        self.calories_total += self.calories_delta
+        if self.calories_total > 255:
+            self.calories_total -= 255
+            if self.calories_total > 255: # after reconnect
+                self.calories_total = 1
+
+        # TIME
         # DISTANCE
         # Accumulated distance, in m-Meters, Rollover = 256
         # self.DistanceBetween = self.ElapsedSeconds * TreadmillSpeed
-        self.treadmill_distance_delta = self.TreadmillDistance - self.treadmill_distance_old
-        self.treadmill_distance_old = self.TreadmillDistance
-        self.DistanceAccu += (
+        self.treadmill_distance_delta = self.treadmill_distance - self.treadmill_distance_old
+        self.treadmill_distance_old = self.treadmill_distance
+        self.distance_accu += (
             self.treadmill_distance_delta
         )  # Add Distance between 2 ANT+ Ticks to Accumulated Distance
-        if self.DistanceAccu > 255:
-            self.DistanceAccu -= 255
+        if self.distance_accu > 255:
+            self.distance_accu -= 255
+            if self.distance_accu > 255: # after reconnect
+                self.distance_accu = 1
 
-        self.distance_H = int(self.DistanceAccu)  # just round it to INT
-        self.DistanceLow_HEX = int((self.DistanceAccu - self.distance_H) * 16)
+        distance_h = int(self.distance_accu)  # just round it to INT
+        distance_low_hex = int((self.distance_accu - distance_h) * 16)
 
         # SPEED - Calculation
-        self.var_speed_ms_H = int(self.TreadmillSpeed)  # INT-Value
-        self.var_speed_ms_L = int(self.TreadmillSpeed * 1000) - (self.var_speed_ms_H * 1000)
-        self.var_speed_ms_L_HEX = int((self.TreadmillSpeed - self.var_speed_ms_H) * 256)
+        var_speed_ms_h = int(self.treadmill_speed)  # INT-Value
+        var_speed_ms_l_hex = int((self.treadmill_speed - var_speed_ms_h) * 256)
 
         # TIME (changes to Distance or speed will affect if This byte needs to be calculated (<= check Specification)
-        if self.Speed_Last != self.TreadmillSpeed or self.Distance_Last != self.DistanceAccu:
-            self.TimeRollover += self.ElapsedSeconds
-            if self.TimeRollover > 255:
-                self.TimeRollover -= 255
+        if self.speed_last != self.treadmill_speed or self.distance_last != self.distance_accu:
+            self.time_rollover += elapsed_seconds
+            if self.time_rollover > 255:
+                self.time_rollover -= 255
+                if self.time_rollover > 255:  # after reconnect
+                    self.time_rollover = 1
 
-        self.TimeRollover_H = int(self.TimeRollover)
+        self.time_rollover_h = int(self.time_rollover)
         # only integer
-        if self.TimeRollover_H > 255:
-            self.TimeRollover_H = 255
-        self.TimeRollover_L_HEX = int((self.TimeRollover - self.TimeRollover_H) * 200)
-        if self.TimeRollover_L_HEX > 255:
-            self.TimeRollover_L_HEX -= 255
+        if self.time_rollover_h > 255:
+            self.time_rollover_h = 255
+            if self.time_rollover_h > 255:  # after reconnect
+                self.time_rollover_h = 1
+        self.time_rollover_l_hex = int((self.time_rollover - self.time_rollover_h) * 200)
+        if self.time_rollover_l_hex > 255:
+            self.time_rollover_l_hex -= 255
+            if self.time_rollover_l_hex > 255:  # after reconnect
+                self.time_rollover_l_hex = 1
 
-        self.Speed_Last = self.TreadmillSpeed
-        self.Distance_Last = self.DistanceAccu
+        self.speed_last = self.treadmill_speed
+        self.distance_last = self.distance_accu
+        ant_message_payload = [0, 0, 0, 0, 0, 0, 0, 0]
 
-        if self.ANTMessageCount < 3:
-            self.ANTMessagePayload[0] = 80  # DataPage 80
-            self.ANTMessagePayload[1] = 0xFF
-            self.ANTMessagePayload[2] = 0xFF  # Reserved
-            self.ANTMessagePayload[3] = 1  # HW Revision
-            self.ANTMessagePayload[4] = 1
-            self.ANTMessagePayload[5] = 1  # Manufacturer ID
-            self.ANTMessagePayload[6] = 1
-            self.ANTMessagePayload[7] = 1  # Model Number
+        if self.ant_message_count < 3:
+            ant_message_payload[0] = 80  # DataPage 80
+            ant_message_payload[1] = 0xFF
+            ant_message_payload[2] = 0xFF  # Reserved
+            ant_message_payload[3] = 1  # HW Revision
+            ant_message_payload[4] = 1
+            ant_message_payload[5] = 1  # Manufacturer ID
+            ant_message_payload[6] = 1
+            ant_message_payload[7] = 1  # Model Number
 
-        elif self.ANTMessageCount > 64 and self.ANTMessageCount < 67:
-            self.ANTMessagePayload[0] = 81  # DataPage 81
-            self.ANTMessagePayload[1] = 0xFF
-            self.ANTMessagePayload[2] = 0xFF  # Reserved
-            self.ANTMessagePayload[3] = 1  # SW Revision
-            self.ANTMessagePayload[4] = 0xFF
-            self.ANTMessagePayload[5] = 0xFF  # Serial Number
-            self.ANTMessagePayload[6] = 0xFF
-            self.ANTMessagePayload[7] = 0xFF  # Serial Number
+        elif 66 < self.ant_message_count < 69:
+            ant_message_payload[0] = 81  # DataPage 81
+            ant_message_payload[1] = 0xFF
+            ant_message_payload[2] = 0xFF  # Reserved
+            ant_message_payload[3] = 1  # SW Revision
+            ant_message_payload[4] = 0xFF
+            ant_message_payload[5] = 0xFF  # Serial Number
+            ant_message_payload[6] = 0xFF
+            ant_message_payload[7] = 0xFF  # Serial Number
 
         else:
-            self.ANTMessagePayload[0] = 0x01  # Data Page 1
-            self.ANTMessagePayload[1] = self.TimeRollover_L_HEX
-            self.ANTMessagePayload[2] = self.TimeRollover_H  # Reserved
-            self.ANTMessagePayload[3] = self.distance_H  # Distance Accumulated INTEGER
-            # BYTE 4 - Speed-Integer & Distance-Fractional
-            self.ANTMessagePayload[4] = (
-                self.DistanceLow_HEX * 16 + self.var_speed_ms_H
-            )  # Instaneus Speed, Note: INTEGER
-            self.ANTMessagePayload[
-                5
-            ] = self.var_speed_ms_L_HEX  # Instaneus Speed, Fractional
-            self.ANTMessagePayload[6] = self.StridesDone  # Stride Count
-            self.ANTMessagePayload[7] = UL_7  # Update Latency
 
+            ant_message_payload[0] = 0x01  # Data Page 1
+            ant_message_payload[1] = self.time_rollover_l_hex
+            ant_message_payload[2] = self.time_rollover_h  # Reserved
+            ant_message_payload[3] = distance_h  # Distance Accumulated INTEGER
+                # BYTE 4 - Speed-Integer & Distance-Fractional
+            ant_message_payload[4] = (
+                distance_low_hex * 16 + var_speed_ms_h
+                )  # Instantaneous Speed, Note: INTEGER
+            ant_message_payload[5] = var_speed_ms_l_hex  # Instantaneous Speed, Fractional
+            ant_message_payload[6] = self.strides_done  # Stride Count - required
+            ant_message_payload[7] = update_latency  # Update Latency
+            
             # ANTMessageCount reset
-            if self.ANTMessageCount > 131:
-                self.ANTMessageCount = 0
+        if self.ant_message_count > 131:
+            self.ant_message_count = 0
 
-        return self.ANTMessagePayload
+        return ant_message_payload
 
     # TX Event
     def on_event_tx(self, data):
-        self.ANTMessagePayload = self.create_next_datapage()
-        self.ActualTime = time.time() - self.TimeProgramStart
-
-        # ANTMessagePayload = array.array('B', [1, 255, 133, 128, 8, 0, 128, 0])    # just for Debugging purpose
+        ant_message_payload = self.create_next_datapage()
+        # self.ANTMessagePayload = [1, 255, 133, 128, 7, 223, 128, 0]    # just for Debugging purpose
         try:
             self.channel.send_broadcast_data(
-                self.ANTMessagePayload)
-        except OverflowError:
-            print('overflow-error: Watch disconnected?')
+                ant_message_payload)
+        except OverflowError as e:
+            print('overflow-error: Watch disconnected?', e)
             time.sleep(1)
-            # todo: raise exception to restart the whole process from bridge
             print('restarting...?')
             self.stop()
 

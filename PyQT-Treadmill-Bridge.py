@@ -195,8 +195,9 @@ class TreadmillGUI(QtWidgets.QWidget):
         payload = data[2:]
         fmt = '<HHBHHHHBBH'
         self.values = list(struct.unpack(fmt, bytes(payload[0:struct.calcsize(fmt)])))
-        self.thread[2].TreadmillSpeed = self.values[0] / 360  # m/s
-        self.thread[2].TreadmillDistance = self.values[9]
+        self.thread[2].treadmill_speed = self.values[0] / 360  # m/s
+        self.thread[2].treadmill_distance = self.values[1]
+        self.thread[2].calories = self.values[5]
         self.update_data(self.values)
 
     def ftms_st(self, data):
